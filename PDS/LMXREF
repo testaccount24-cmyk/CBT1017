@@ -1,0 +1,1192 @@
+V1L0     TITLE '                            Load Module / CSECT Cross R?
+               eference Utility'
+***********************************************************************
+*                                                                     *
+* Title -- LMXREF                                                     *
+*                                                                     *
+* Function / Operation -- LMXREF scans the contents of an OS/360      *
+*   load module data set defined by the SYSUT1 DD statement.  LMXREF  *
+*   extracts information about each named CSECT in every load module  *
+*   and generates an output data set containing the extracted data.   *
+*   This data includes --                                             *
+*                                                                     *
+*     CSECT name                                                      *
+*     CSECT size                                                      *
+*     The most significant compiler IDR data.                         *
+*     IDENTIFY data                                                   *
+*     The last SUPERZAP data for the CSECT                            *
+*     The load module name                                            *
+*     The load module library name                                    *
+*     The load module library volume                                  *
+*     The date the load module was linked                             *
+*                                                                     *
+*   The output data from LMXREF is intended to feed the LMXREFR       *
+*   program or some other reporting program.                          *
+*                                                                     *
+* Status / Change Level --                                            *
+*   V1L0 -- March 1993                                                *
+*                                                                     *
+* Attributes -- This module is not reentrant, not refreshable and     *
+*   not reusable.  It operates in problem key and problem state.      *
+*   It uses no authorized operating system resources.                 *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+***********************************************************************
+         EJECT
+         MACRO
+         SETR
+         LCLA  &A
+.L       AIF   (&A GT 15).X
+R&A      EQU   &A
+&A       SETA  &A+1
+         AGO   .L
+.X       MEND
+         SPACE 5
+         MACRO
+&NAME    COPYRITE &TEXT
+         CNOP  0,8
+         LCLC  &S1,&S2,&S3
+&S1      SETC  'IHB&SYSNDX.A'
+&S2      SETC  'IHB&SYSNDX.B'
+&S3      SETC  'IHB&SYSNDX.C'
+&NAME    B     &S3-*(,15)
+         DC    AL1(&S2)
+&S1      DC    C&TEXT,C' Copyright (C) 2021 J. Stephen Myers &SYSDATE &>
+               SYSTIME'
+&S2      EQU   *-&S1
+&S3      STM   14,12,12(13)
+         MEND
+         EJECT
+LMXREF   CSECT                     DEFINE PROGRAM CSECT
+         USING *,R12               ESTABLISH PROGRAM ADDRESSABILITY
+         COPYRITE 'Load Module / CSECT Data Extract Utility -- V1L0 --'
+         LR    R12,R15             COPY EP ADDRESS TO R12
+         LA    R15,S               LOAD ADDRESS OF THE 1ST SAVE AREA
+         ST    R15,8(,R13)         ADD NEW SAVE AREA TO THE
+         ST    R13,4(,R15)          SAVE AREA CHAIN
+         LR    R13,R15             ESTABLISH THE NEW SAVE AREA POINTER
+         TIME  DEC                 GET THE TIME AND DATE
+         STM   R0,R1,DWORK         SAVE THE VALUES
+         LA    R0,DWORK            LOAD ADDRESS OF DWORK
+         L     R1,=A(OUTEDIT)      LOAD START OF OUTEDIT
+         LA    R1,PAGEHDR-OUTEDIT+5(R1) COMPUTE START OF PAGE HEADER
+         L     R15,=A(CNVTDATE)    LOAD START OF CNVTDATE
+         CALL  (15)                CONVERT THE DATE AND TIME
+         SPACE 1
+         L     R15,=A(OPENLIST)    LOAD ADDR OF OPENLST
+         CALL  (15),MF=(E,OPARM)   OPEN THE DATA SET
+         LTR   R15,R15             TEST RC
+         BNZ   ERR1                BR IF SOMETHING WENT WRONG
+         GETMAIN VRU,BNDRY=PAGE,   ALLOCATE THE REMAINING STORAGE      ?
+               LV=(13*1024*1024,64*1024)
+         STM   R0,R1,STORAGE       SAVE LENGTH AND ADDRESS
+         LR    R3,R1               COPY START TO R3
+         LR    R5,R0               COPY LENGTH TO R5
+         AR    R5,R3               COMPUTE END OF STORAGE
+         BCTR  R5,0                COMPUTE ADDR OF LAST BYTE IN STORAGE
+         ST    R3,MEMBTAB          SAVE START OF THE MEMBER TABLE
+         LA    R4,(62+8+12)        LOAD LENGTH OF AN ENTRY
+DIRR0100 GET   UT1DIR              READ A DIRECTORY BLOCK
+         LA    R15,2(,R1)          COMPUTE START OF THE FIRST MEMBER
+         AH    R1,0(,R1)           COMPUTE END OF DATA IN THE BLOCK
+         BCTR  R1,0                REDUCE BY 1
+         SR    R14,R14             SET R14 = 0
+DIRR0200 CLC   =FL8'-1',0(R15)     TEST IF EOF ENTRY
+         BE    UT1DEOF             BR IF SO
+         IC    R14,11(,R15)        LOAD LENGTH OF DATA
+         N     R14,=A(X'1F')       TURN OFF ALIAS FLAG AND TTR COUNT
+         LA    R14,12(R14,R14)     COMPUTE LENGTH OF DATA
+         LR    R0,R14              COPY TRUE LENGTH TO R0
+         BCTR  R14,0               REDUCE BY 1
+         EX    R14,MOVEDIR         MOVE A DIRECTORY ENTRY
+         BXH   R3,R4,DIRR0300      EXIT IF THE TABLE IS FULL
+         BXLE  R15,R0,DIRR0200
+         B     DIRR0100
+         SPACE 1
+MOVEDIR  MVC   0(*-*,R3),0(R15) ** EXECUTE ONLY **
+         EJECT
+         CNOP  0,8
+DIRR0300 DC    0H'0'
+UT1DEOF  DC    0H'0'
+         LR    R1,R3               COPY R3 TO R1
+         SR    R1,R4               COMPUTE ADDR OF THE LAST ENTRY      ?
+                                    IN THE MEMBER TABLE
+         ST    R1,MEMBTAB+4        SAVE ADDR OF THE LAST ENTRY
+         C     R1,MEMBTAB          TEST IF ANY DATA
+         BL    ERR2                BR IF NOT
+         LA    R3,7(,R3)           ROUND UP R3 TO A DOUBLE WORD VALUE
+         N     R3,=F'-8'
+         GETBUF UT1DATA,(R2)       GET ADDRESS OF THE 1 AND ONLY I/O   ?
+                                    BUFFER
+         ST    R2,DECB+12          STORE THE BUFFER ADDRESS IN THE 1   ?
+                                    AND ONLY DECB
+         L     R7,MEMBTAB          LOAD START OF THE MEMBER TABLE
+         LA    R8,(62+8+12)        LOAD LENGTH OF AN ENTRY
+         L     R9,MEMBTAB+4        LOAD ADDRESS OF THE LAST MEMBER     ?
+                                    TABLE ENTRY
+SCANP100 TM    11(R7),X'80'        TEST IF ALIAS
+         BO    SCANP200            BR IF SO
+         LR    R1,R7               COPY TO R1
+         L     R15,=A(DOMEMB)      LOAD START
+         CALL  (15)
+         XC    8(3,R7),8(R7)       CLEAR THE TTR
+SCANP200 BXLE  R7,R8,SCANP100
+         L     R7,MEMBTAB          LOAD START OF THE MEMBER TABLE
+SCANA100 TM    11(R7),X'80'        TEST IF ALIAS
+         BZ    SCANA200            BR IF SO
+         OC    8(3,R7),8(R7)       TEST IF ALIAS ALREADY FOUND
+         BZ    SCANA200            BR IF SO
+         LR    R1,R7               COPY TO R1
+         L     R15,=A(DOMEMB)      LOAD START
+         CALL  (15)
+         XC    8(3,R7),8(R7)       CLEAR THE TTR
+SCANA200 BXLE  R7,R8,SCANA100
+         SR    R11,R11             SET R11 = 0
+         B     EXIT                GO EXIT
+         EJECT
+ERR1     DC   0H'0'
+         L     R15,=A(OUTEDIT)     LOAD START OF OUTEDIT
+         TM    DCBOFLGS-IHADCB+PRINT-OUTEDIT(R15),DCBOFOPN TEST IF     ?
+                                               SYSPRINT MANAGED TO OPEN
+         BO    ERR10100            BR IF SO
+         L     R1,=A(MERR1W)       LOAD ADDRESS OF THE WTO MSG
+         WTO   MF=(E,(1))          WRITE THE WTO MESSAGE
+         LA    R11,16              SET RC = 16
+         B     EXIT
+ERR10100 L     R3,=A(MERR1P)       LOAD MESSAGE ADDRESS
+         LA    R2,OPARM            LOAD START OF THE OPEN PARM LIST
+ERR10200 L     R1,0(,R2)           LOAD DCB ADDRESS
+         TM    DCBOFLGS-IHADCB(R1),DCBOFOPN TEST IF DCB IS OPEN
+         BO    ERR10300            BR IF SO
+         MVC   MERR1PD-MERR1P(,R3),DCBDDNAM-IHADCB(R1) COPY THE DDNAME
+         LR    R1,R3               COPY THE MESSAGE ADDR TO R1
+         L     R15,=A(OUTEDIT)     LOAD START OF OUTEDIT
+         CALL  (15)                WRITE THE MESSAGE
+ERR10300 TM    0(R2),X'80'         TEST IF END OF THE PARM LIST
+         LA    R2,4(,R2)           COMPUTE ADDR OF THE NEXT PARM LIST  ?
+                                    ENTRY
+         BZ    ERR10200            BR IF NOT END
+         LA    R11,8               SET R11 = 8
+         B     EXIT                GO CLOSE THE DCBS
+         SPACE 5
+ERR2     L     R1,=A(MERR2P)       LOAD MESSAGE ADDRESS
+         L     R15,=A(OUTEDIT)     LOAD START OF OUTEDIT
+         CALL  (15)
+         LA    R11,8               SET R11 = 8
+         B     EXIT
+         EJECT
+EXIT     L     R15,=A(OUTEDIT)     LOAD START OF OUTEDIT
+         TM    DCBOFLGS-IHADCB+PRINT-OUTEDIT(R15),DCBOFOPN TEST IF     ?
+                                                       SYSPRINT IS OPEN
+         BZ    XIT0100             BR IF SO
+         L     R1,=A(MERRDP)       LOAD ADDR OF PROCESSING COMPLETE MSG
+         CALL  (15)                PRINT THE MESSAGE
+XIT0100  L     R15,=A(CLOSELST)    LOAD START OF CLOSE ROUTINE
+         CALL  (15),MF=(E,OPARM)   CLOSE THE DATA SETS
+         LM    R2,R3,STORAGE       LOAD ADDRESS OF STORAGE
+         LTR   R2,R2               TEST IF ANY ALLOCATED
+         BZ    XIT0200             BR IF NOT
+         FREEMAIN RU,LV=(R2),A=(R3) RELEASE STORAGE
+XIT0200  L     R13,4(,R13)         LOAD ADDR OF THE CALLER'S SAVE AREA
+         RETURN (14,12),T,RC=0     RETURN TO CALLER
+         EJECT
+         CNOP  0,8
+         USING *,R12               ESTABLISH ADDRESSABILITY
+DOMEMB   SAVE  (14,12),,*          SAVE CALLER'S REGISTERS
+         LR    R12,R15             COPY EP ADDRESS TO R12
+         LA    R15,72(,R13)        LOAD ADDR OF THE NEXT SAVE AREA
+         ST    R15,8(,R13)         ADD NEW SAVE AREA TO THE
+         ST    R13,4(,R15)          SAVE AREA CHAIN
+         LR    R13,R15             MAKE R13 POINT TO THE NEW SAVE AREA
+         LR    R2,R1               COPY THE MEMBER ENTRY POINTER TO R2
+         ST    R3,CESD             SAVE ADDR OF THE ESD TABLE
+         XC    ZAPTAB,ZAPTAB
+         XC    IDENTAB,IDENTAB
+         XC    CSECTTAB,CSECTTAB
+         XC    MAXESDID,MAXESDID   CLEAR MAXESDID
+         MVC   LINKDATE,=CL8' '    CLEAR LINKDATE
+         MVC   LOADMOD,0(R2)       COPY THE LOAD MODULE NAME
+         L     R15,MEMBTAB         LOAD ADDR OF THE MEMBER TABLE
+DOM0100  CR    R15,R2              TEST IF ENTRY WE'RE DOING
+         BE    DOM0200             BR IF SO
+         CLC   8(3,R15),8(R2)      COMPARE TTRS
+         BNE   DOM0200             BR IF NOT A MATCH
+         XC    8(3,R15),8(R15)     INDICATE ALIAS IS DONE
+DOM0200  BXLE  R15,R8,DOM0100      DO THE REMAINDER
+         XC    DWORK,DWORK         CLEAR DWORK
+         MVC   DWORK(3),8(R2)      COPY THE TTR TO DWORK
+         FIND  UT1DATA,DWORK,C     GET READY TO READ THE FIRST RECORD
+         CNOP  0,8
+DOM0300  READ  DECB,SF,MF=E        READ THE NEXT BLOCK
+         CHECK DECB                WAIT FOR I/O TO COMPLETE
+         L     R4,DECB+12          LOAD ADDRESS OF THE DATA AREA
+         USING CESDREC,R4          SET ITS ADDRESS
+         TM    CESDRID,X'0F'       TEST IF FIRST CNTL RECORD
+         BNZ   DOM1500             BR IF SO, WE'VE READ ALL THE RECORDS?
+                                    WE'RE INTERESTED IN
+         CLI   CESDRID,X'20'       TEST IF ESD
+         BNE   DOM0500             BR IF NOT
+         SR    R15,R15             SET R15 = 0
+         SR    R1,R1               SET R1 = 0
+         SR    R7,R7               SET R7 = 0
+         ICM   R7,B'0011',CESRDID  LOAD ESDID
+         MH    R7,=AL2(ESDENTL)    MULTIPLY BY LENGTH
+         A     R7,CESD             COMPUTE ADDRESS OF THE FIRST ENTRY
+         USING ESDENT,R7           ESTABLISH ADDRESSABILITY
+         LH    R9,CESDCNT          LOAD BYTES OF CESD DATA IN RECORD
+         LA    R9,CESDENTS(R9)     COMPUTE END OF DATA
+         LA    R8,16               SET R8 = LENGTH OF CESD DATA
+         SR    R9,R8               COMPUTE ADDR OF THE LAST DATA RECORD
+         LA    R4,CESDENTS         COMPUTE ADDR OF THE 1ST ENTRY
+         USING CESDENT,R4          ESTABLISH CESD ENTRY ADDRESSING
+DOM0400  MVC   ESDNAME,CESDNAME    COPY THE ELEMENT NAME
+         MVC   ESDTYPE,CESDTYPE    COPY THE ENTRY TYPE
+         SR    R0,R0               SET R0 = 0
+         ICM   R0,B'0111',CESDADDR LOAD ADDRESS
+         ST    R0,ESDADDR1         SAVE IT
+         ICM   R0,B'0111',CESDID   LOAD ESDID / LENGTH
+         ST    R0,ESDADDR2         SAVE IT
+         MVC   ESDFLAGS,CESDFLAG   COPY FLAGS
+         LR    R15,R7              COPY CURRENT ADDRESS TO R15
+         S     R15,CESD            COMPUTE OFFSET
+         SR    R14,R14             SET R14 = 0
+         D     R14,=A(ESDENTL)     DIVIDE BY THE LENGTH
+         STH   R15,ESDID           SAVE THE ESDID OF THIS ENTRY
+         C     R15,MAXESDID        COMPARE WITH KNOWN MAX
+         BNH   *+8                 BR IF NOT GREATER
+         ST    R15,MAXESDID        SAVE THE ESDID
+         LA    R7,ESDENTL(,R7)     COMPUTE NEXT ESD ENTRY ADDRESS
+         BXLE  R4,R8,DOM0400       GO DO THE NEXT CESD ENTRY
+         B     DOM0300
+         SPACE 1
+         DROP  R7                  KILL ESD ENTRY ADDRESSING
+         EJECT
+         CNOP  0,8
+         USING CESDREC,R4          SET ITS ADDRESS
+DOM0500  OC    MAXESDID,MAXESDID   TEST IF MAXESD DEFINED
+         BZ    DOM0300             BR IF NOT, TRY THE NEXT RECORD
+         L     R7,MAXESDID         LOAD MAX ESDID
+         LA    R7,1(,R7)           ADD 1
+         MH    R7,=AL2(ESDENTL)    COMPUTE TOTAL LENGTH OF THE TABLE
+         A     R7,CESD             COMPUTE START OF NEXT TABLE SECTION
+DOM0600  CLI   CESDRID,IDRID       TEST IF IDR RECORD
+         BNE   DOM1400             BR IF UNKNOWN
+         USING IDRREC,R4           ESTABISH ADDRESSABILITY
+DOM0700  MVC   DWORK(1),IDRSTYPE   COPY SUBTYPE BYTE
+         NI    DWORK,IDRMASK       RESET
+         CLI   DWORK,IDRSPZAP      TEST IF SUPERZAP
+         BE    DOM1200
+         CLI   DWORK,IDRLINK       TEST IF LINK EDITOR
+         BE    DOM0810
+         CLI   DWORK,IDRCOMP       TEST IF COMPILER
+         BE    DOM0900
+         CLI   DWORK,IDRUSER       TEST IF IDENTIFY DATA
+         BNE   DOM1400             BYPASS IF NOT
+* IDR RECORD REPRESENTS IDENTIFY DATA
+DOM0800  LA    R2,IDENTAB
+         B     DOM1000
+* LINKAGE EDITOR IDR RECORD
+DOM0810  XC    DWORK,DWORK         CLEAR DWORK
+         MVC   DWORK+5(3),IDRLDATE-IDRLDATA+IDRDATA COPY LINK DATE     ?
+                                    FROM LINKAGE EDITOR IDR RECORD
+         LA    R0,DWORK            LAOD START OF TRANSLATION AREA
+         LA    R1,DTOUT            LOAD START OF OUTPUT AREA
+         L     R15,=A(CNVTDATE)    LOAD ADDRESS OF CNVTDATE
+         CALL  (15)                CONVERT DATE
+         MVC   LINKDATE,DTOUT      COPY LINK DATE
+         B     DOM1400             EXIT I WHEN DATE CONVERTED
+* IDR RECORD REPRESENTS COMPILER DATA
+DOM0900  LA    R2,CSECTTAB
+*        B     DOM1000
+DOM1000  OC    0(4,R2),0(R2)       TEST IF DATA PRESENT
+         BNZ   DOM1100             BR IF SO
+         LA    R7,7(,R7)           ROUND UP TO A DOUBLE WORD
+         N     R7,=F'-8'
+         ST    R7,0(,R2)           SAVE START
+DOM1100  LR    R0,R7               COPY CURRENT ADDRESS TO R0
+         SR    R1,R1               SET R1 = 0
+         IC    R1,IDRSIZE          LOAD RECORD SIZE
+         S     R1,=A(IDRDATA-IDRSIZE) GET TRUE DATA LENGTH
+         LA    R14,IDRDATA         LOAD TRUE START OF DATA
+         LR    R15,R1              COPY LENGTH TO R15
+         MVCL  R0,R14              COPY DATA
+         LR    R7,R0               COPY
+         ST    R0,4(,R2)           STORE END OF DATA
+         B     DOM1400             GO READ THE NEXT RECORD
+* RECORD IS A SUPERZAP IDR RECORD
+DOM1200  LA    R2,ZAPTAB           LOAD START
+         OC    0(4,R2),0(R2)       TEST IF DATA PRESENT
+         BNZ   DOM1210             BR IF SO
+         LA    R7,7(,R7)           ROUND UP TO A DOUBLE WORD
+         N     R7,=F'-8'
+         ST    R7,0(,R2)           SAVE START
+DOM1210  SR    R1,R1               SET R1 = 0
+         IC    R1,IDRDATA          LOAD NUMBER OF ENTRIES
+         LA    R15,256/13          LOAD MAX RECORDS IN A RECORD
+         CR    R1,R15              COMPARE WITH MAX ENTRIES IN A RECORD
+         BNH   DOM1300             BR IF COUNT'S OK
+         LR    R1,R15              COPY CORRECT VALUE TO R1
+DOM1300  LA    R15,13              LOAD LENGTH OF AN ENTRY
+         MR    R0,R15              COMPUTE LENGTH TO MOVE
+         LA    R0,IDRDATA+1        LOAD ADDRESS OF THE FIRST ENTRY
+         LR    R15,R1              COPY LENGTH TO MOVE TO R15
+         LR    R14,R7              COPY START TO R14
+         MVCL  R14,R0              COPY DATA
+         LR    R7,R14              UPDATE POSITION
+         ST    R14,4(,R2)          UPDATE END OF SECTION POINTER
+DOM1400  READ  DECB,SF,MF=E        READ THE NEXT RECORD
+         CHECK DECB                WAIT FOR I/O TO COMPLETE
+         TM    IDRRID,X'0F'        TEST IF PREFIX RECORD
+         BZ    DOM0600             BR IF SO
+         SPACE 1
+         DROP  R4                  KILL FULL RECORD ADDRESSING
+         EJECT
+         CNOP  0,8
+UT1EOF   DC    0H'0'
+DOM1500  L     R3,CESD             LOAD ADDRESS OF THE CESD TABLE
+         LA    R4,ESDENTL          SET R4 = LENGTH OF AN ENTRY
+         L     R5,MAXESDID         LOAD MAXIMUM ESDID
+         LTR   R5,R5               TEST VALUE
+         BNZ   DOM1510             BR IF NON-ZERO
+         L     R1,=A(MERR3P)       LOAD ADDRESS OF THE MESSAGE
+         MVC   MERR3PM-MERR3P(,R1),LOADMOD COPY THE LOAD MODULE NAME
+         L     R15,=A(OUTEDIT)     LOAD START OF OUTEDIT
+         CALL  (15)                WRITE THE LINE
+         B     DOM9000             GO EXIT
+DOM1510  MH    R5,=AL2(ESDENTL)    COMPUTE SIZE OF THE ESD TABLE
+*        SR    R5,R4               COMPUTE OFFSET OF LAST ENTRY
+         AR    R5,R3               COMPUTE ADDRESS OF THE LAST ENTRY
+         CNOP  0,8
+         SPACE 1
+         USING ESDENT,R3           ESTABLISH ESD ENTRY ADDRESSABILITY
+         USING XREFREC,R2          ESTABLISH XREF REC ADDRESSABILITY
+         SPACE 1
+         MVI   ESDTYPE,ESDNULL     INDICATE FIRST ELEMENT (THE         ?
+                                    IMPOSSIBLE ESDID 0) IS NULL
+         CNOP  0,8
+DOM1600  IC    R0,ESDTYPE          LOAD ENTRY TYPE
+         N     R0,=A(ESDSDM)       TURN OFF NON-SIGNIFICAN BITS
+         C     R0,=A(ESDSD)        COMPARE WITH SD TYPE CODE
+         BNE   DOM8000             EXIT IF NOT SD
+         PUT   UTX                 GET BUFFER SPACE FOR THE RECORD
+         LR    R2,R1               COPY RECORD ADDRESS TO R2
+         LR    R0,R1               COPY RECORD ADDRESS TO R0
+         LA    R1,XREFRECL         LOAD LENGTH
+         L     R15,=AL1(C' ',0,0,0) LOAD FILL CHARACTER
+         MVCL  R0,R14              CLEAR THE RECORD
+         MVC   XREFDSN,JFCBDSNM    COPY THE DATA SET NAME
+         MVC   XREFVOL,JFCBVOLS    COPY THE VOLUME SERIAL
+         MVC   XREFNAME,ESDNAME    COPY THE CSECT NAME
+         MVC   XREFLMOD,LOADMOD    COPY THE LOAD MODULE NAME
+         MVC   XREFLDAT,LINKDATE   COPY LINKEDIT DATE
+         L     R15,ESDADDR2        LOAD LENGTH
+         STCM  R15,B'0111',XREFSIZE SAVE THE LENGTH
+         L     R6,CSECTTAB         LOAD ADDRESS OF THE COMPILER TABLE
+         LTR   R6,R6               TEST IF FOUND
+         BZ    DOM2000             BR IF NO COMPILER TABLE
+         MVI   DWORK,0             INDICATE NO MATCH
+DOM1700  C     R6,CSECTTAB+4       TEST IF WE BE DONE
+         BNL   DOM2000             BR IF SO
+         LH    R0,0(,R6)           LOAD ESDID
+         N     R0,=A(X'7FFF')      TURN OFF VL BIT
+         CH    R0,ESDID            COMPARE AGAINST ESDID OF ENTRY
+         BNE   DOM1800             BR IF NOT MATCHED
+         MVI   DWORK,1             INDICATE MATCH
+DOM1800  TM    0(R6),X'80'         TEST IF LAST ENTRY
+         LA    R6,2(,R6)           COMPUTE ADDR OF NEXT ESDID VALUE
+         BZ    DOM1700             CONTINUE
+         CLI   DWORK,0             TEST IF MATCHED
+         BE    DOM1900             BR IF NOT
+         XC    DWORK,DWORK         CLEAR DWORK
+         MVI   XREFCDAT,C' '       CLEAR COMPILER DATA
+         MVC   XREFCDAT+1(L'XREFCDAT-1),XREFCDAT
+*        XC    XREFCLV1(2*L'XREFCLV1),XREFCLV1
+         XC    XREFCLV2(2*L'XREFCLV2),XREFCLV2
+         MVC   XREFCID1,1(R6)      COPY THE COMPILER ID
+         MVC   XREFCLV1(2*L'XREFCLV1),11(R6)
+         MVC   DWORK+5(3),13(R6)   COPY TRANSLATION DATE (TIME IS      ?
+                                    NOT KNOWN)
+         LA    R0,DWORK            LAOD START OF TRANSLATION AREA
+         LA    R1,DTOUT            LOAD START OF OUTPUT AREA
+         L     R15,=A(CNVTDATE)    LOAD ADDRESS OF CNVTDATE
+         CALL  (15)                CONVERT DATE
+         MVC   XREFCDT1,DTOUT      COPY YY/MM/DD
+         CLI   0(R6),0             TEST IF 1 ENTRY
+         BE    DOM1900             BR IF SO
+         MVC   XREFCID2,15+1(R6)   COPY THE COMPILER ID
+         MVC   XREFCLV2(2*L'XREFCLV1),15+11(R6)
+         MVC   DWORK+5(3),15+13(R6) COPY TRANSLATION DATE (TIME IS     ?
+                                    NOT KNOWN)
+         LA    R0,DWORK            LAOD START OF TRANSLATION AREA
+         LA    R1,DTOUT            LOAD START OF OUTPUT AREA
+         L     R15,=A(CNVTDATE)    LOAD ADDRESS OF CNVTDATE
+         CALL  (15)                CONVERT DATE
+         MVC   XREFCDT2,DTOUT      COPY YY/MM/DD
+DOM1900  SR    R1,R1               SET R0 = 0
+         IC    R1,0(,R6)           LOAD NUMBER OF ENTRIES - 1
+         LA    R1,1(,R1)           SET R1 TO TRUE NUMBER OF ENTRIES
+         MH    R1,=H'15'           ADD LENGTH OF AN ENTRY
+         LA    R6,1(R1,R6)         COMPUTE ADDRESS OF THE NEXT ENTRY
+         B     DOM1700             AND CONTINUE
+         SPACE 1
+         USING IDRIDATA,R6
+         SPACE 1
+DOM2000  L     R6,IDENTAB          LOAD ADDRESS OF IDENTIFY DATA
+         LTR   R6,R6               TEST IF PRESENT
+         BZ    DOM3000             BR IF NO IDENTIFY DATA
+DOM2100  C     R6,IDENTAB+4        COMPARE R6 W/END OF TABLE
+         BNL   DOM3000             BR IF DONE
+         LH    R0,IDRIESD          LOAD ESDID
+         N     R0,=A(X'7FFF')      TURN OFF THE HIGH ORDER BYTE
+         CH    R0,ESDID            TEST IF MATCH
+         BNE   DOM2200             BR IF NOT
+         XC    DWORK,DWORK         CLEAR DWORK
+         MVC   DWORK+5(L'IDRIDATE),IDRIDATE COPY UPDATE DATE
+         LA    R0,DWORK            LOAD ADDRESS OF DWORK
+         LA    R1,DTOUT            LOAD ADDRESS OF OUTPUT AREA
+         L     R15,=A(CNVTDATE)    LOAD ADDR OF CNVTDATE
+         CALL  (15)                CONVERT DATE TO PRINTABLE DATA
+         MVC   XREFID,DTOUT        COPY DATE FROM DTOUT
+         LA    R14,XREFIT          LOAD ADDRESS OF OUTPUT AREA
+         SR    R15,R15             SET R15 = 0
+         IC    R15,IDRICNT         LOAD SIZE OF DATA
+         O     R15,=AL1(C' ',0,0,0) ADD IN FILL CHARACTER
+         LA    R0,IDRITXT          LOAD START OF TEXT
+         LA    R1,L'XREFIT         LOAD LENGTH
+         MVCL  R14,R0              COPY THE IDENTIFY TEXT
+DOM2200  SR    R15,R15             SET R15 = 0
+         IC    R15,IDRICNT         LOAD LENGTH OF TEXT
+         LA    R6,IDRITXT(R15)     COMPUTE ADDRESS OF THE NEXT ELEMENT
+         B     DOM2100             CONTINUE
+         SPACE 1
+         DROP  R6
+         SPACE 1
+DOM3000  DC    0H'0'
+         L     R6,ZAPTAB           LOAD ADDR OF SUPERZAP TABLE
+         LTR   R6,R6               TEST IF PRESENT
+         BZ    DOM3300             BR IF NOT
+DOM3100  C     R6,ZAPTAB+4         COMPARE W/ END OF TABLE
+         BNL   DOM8000             BR IF DONE
+         LH    R0,0(,R6)           LOAD THE ESDID
+         N     R0,=A(X'7FFF')      TURN OFF HIGH ORDER BIT (IF ON)
+         CH    R0,ESDID            COMPARE
+         BNE   DOM3200             BR IF NO MATCH
+         XC    DWORK,DWORK         CLEAR DWORK
+         MVC   DWORK+5(3),2(R6)    COPY THE ZAP DATE
+         LA    R0,DWORK            LOAD ADDR OF TIME / DATE DATA
+         LA    R1,DTOUT            LOAD START OF DTOUT
+         L     R15,=A(CNVTDATE)    LOAD ADDR OF CNVTDATE
+         CALL  (15)                CONVERT THE DATE
+         MVC   XREFZD,DTOUT        COPY THE DATE TO THE OUTPUT RECORD
+         MVC   XREFZT,5(R6)        COPY THE ZAP TEXT
+DOM3200  LA    R6,13(,R6)          COMPUTE ADDR OF THE NEXT ZAP ELEMENT
+         B     DOM3100             AND CONTINUE
+DOM3300  DC    0H'0'               NO SUPERZAP DATA
+         SPACE 1
+DOM8000  BXLE  R3,R4,DOM1600
+         SPACE 1
+DOM9000  L     R13,4(,R13)
+         RETURN (14,12),T
+         EJECT
+DWORK    DC    D'0'
+LINKDATE DC    CL8' '
+LOADMOD  DC    CL8' '              CURRENT LOAD MODULE
+STORAGE  DC    2A(*-*)             LENGTH & START OF ALLOCATED STORAGE
+MEMBTAB  DC    2A(*-*)             FIRST AND LAST ENTRY IN THE MEMBER  ?
+                                    TABLE
+CESD     DC    A(*-*)              ADDRESS OF THE ESD TABLE
+ZAPTAB   DC    2A(*-*)             SUPERZAP TABLE
+IDENTAB  DC    2A(*-*)             IDENTIFY RECORD TABLE
+CSECTTAB DC    2A(*-*)             COMPILER TABLE
+MAXESDID DC    A(*-*)              MAXIMUM ESDID
+         READ  DECB,SF,UT1DATA,*-*,'S',MF=L
+OPARM    OPEN  (PRINT,OUTPUT,UT1DIR,INPUT,UT1DATA,INPUT,UTX,OUTPUT),MF=?
+               L
+         PUSH  PRINT
+         PRINT NOGEN
+UT1DIR   DCB   MACRF=GL,DDNAME=SYSUT1,EODAD=UT1DEOF,                   ?
+               RECFM=F,LRECL=256,BLKSIZE=256,DSORG=PS
+UT1DATA  DCB   MACRF=R,DDNAME=SYSUT1,EODAD=UT1EOF,DSORG=PO,BUFNO=1,    ?
+               EXLST=DATAXLST
+UTX      DCB   MACRF=PL,DDNAME=SYSUT2,EXLST=UT2XLST,                   ?
+               DSORG=PS,RECFM=FB,LRECL=XREFRECL
+         POP   PRINT
+DATAXLST DC    0A(0),AL1(X'80'+7),AL3(DATAJFCB)
+UT2XLST  DC    0A(0),AL1(X'80'+5),AL3(SETDCB)
+         DC    0D'0'
+         LTORG ,
+DTOUT    DC    C'MM/DD/YY HH:MM'
+S        DC    (10*9)D'0'
+         EJECT
+         PUSH  PRINT
+         PRINT NOGEN
+         DC    0D'0'
+DATAJFCB DC   0XL176'0'
+         IEFJFCBN ,
+         POP   PRINT
+         EJECT
+MERR1W   WTO   'LMX001I ERROR OPENING SYSPRINT',                       ?
+               MF=L,ROUTCDE=11,DESC=7
+         SPACE 1
+MERR1P   DC    AL2(MERR1PL,0),C' LMX002I ERROR OPENING '
+MERR1PD  DC    CL8' '
+MERR1PL  EQU   *-MERR1P
+         SPACE 1
+MERR2P   DC    AL2(MERR2PL,0),C' LMX003I SYSUT1 CONTAINS NO MEMBERS'
+MERR2PL  EQU   *-MERR2P
+         SPACE 1
+MERR3P   DC    AL2(MERR3PL,0),C' LMX004I LOAD MODULE '
+MERR3PM  DC    CL8' '
+         DC    C' CONTAINS NO CESD ENTRIES'
+MERR3PL  EQU   *-MERR3P
+         SPACE 1
+MERRDP   DC    AL2(MERRDPL,0),C'-LMX999I LMXREF PROCESSING COMPLETED'
+MERRDPL  EQU   *-MERRDP
+         EJECT
+         SPACE 12
+***********************************************************************
+*                                                                     *
+* Title -- OPEN and CLOSE subroutines                                 *
+*                                                                     *
+* Function / Operation -- The OPENLIST subroutine uses the MVS/DFP    *
+*   OPEN service to connect one or more DCBs specified by a single    *
+*   OPEN parameter list to the program.  Although the input is an     *
+*   OPEN parameter list that may potentially point to more than one   *
+*   DCB, OPENLIST opens each DCB separately.  OPENLIST also verifies  *
+*   the DD statement for the DCB is present before attempting to      *
+*   open the DCB.  If an exist list element that points to a JFCB     *
+*   is present the program reads the JFCB and performs a TYPE=J       *
+*   OPEN.                                                             *
+*                                                                     *
+*   The CLOSELST subroutine uses the MVS/DFP CLOSE service to         *
+*   disconnect one or more open DCBs specified by a single CLOSE      *
+*   parameter list from the program.  After CLOSE processing is       *
+*   complete CLOSELST releases any buffer pool attached to the DCB.   *
+*                                                                     *
+* Status / Change Level --                                            *
+*   V1L0 -- September 30, 1992                                        *
+*                                                                     *
+* Attributes -- The code for OPENLIST is not reentrant or             *
+*   refreshable.  It is reusable.  The code for CLOSELST is           *
+*   reentrant, refreshable and reusable.  Neither OPENLIST or         *
+*   CLOSELST use any authorized services.                             *
+*                                                                     *
+* Character set -- Not applicable                                     *
+*                                                                     *
+***********************************************************************
+         EJECT
+         CNOP  0,8
+OPENLIST SAVE  (14,5),,*           SAVE REGISTERS
+         BALR  R5,0                STORE CURRENT ADDRESS IN R12
+         USING *,R5                ESTABLISH LOCAL BASE REGISTER
+         LA    R15,72(,R13)        LOAD ADDR OF THE NEXT SAVE AREA
+         ST    R13,4(,R15)         ADD NEW SAVE AREA TO CALLER'S
+         ST    R15,8(,R13)          SAVE AREA CHAIN
+         LR    R13,R15             ESTABLISH NEW SAVE AREA POINTER
+         LR    R2,R1               COPY OPEN PARM LIST ADDRESS TO R2
+         SR    R4,R4               PRESET THE RETURN CODE
+OL0100   L     R3,0(,R2)           LOAD DCB ADDR FROM THE PARM LIST
+         TM    DCBOFLGS-IHADCB(R3),DCBOFOPN TEST IF DCB IS OPEN
+         BO    OL0300              BR IF SO
+         DEVTYPE DCBDDNAM-IHADCB(,R3),OLWORK  TEST IF DDNAME DEFINED
+         LA    R0,4                SET PRELIMINARY RETURN CODE
+         LTR   R15,R15             TEST RC FROM DEVTYPE
+         BNZ   OL0200              BR IF DDNAME IS NOT DEFINED
+         TM    DCBEXLST-IHADCB+4(R3),1 TEST IF EXIT LIST PRESENT
+         BO    OL0130              BR IF NOT
+         ST    R3,OLPARM           SAVE DCB ADDRESS AND OPEN PARMS IN  ?
+                                    MY OPEN PARM LIST
+         OI    OLPARM,X'80'        INDICATE LAST ENTRY
+         L     R15,DCBEXLST-IHADCB(,R3) LOAD ADDRESS OF A POSSIBLE     ?
+                                         EXIT LIST
+         N     R15,=A(X'FFFFFF')   TURN OFF THE HIGH ORDER BITS
+         BZ    OL0130              BR IF NOT PRESENT
+OL0110   IC    R14,0(,R15)         LOAD ENTRY TYPE FLAG
+         N     R14,=A(X'7F')       TURN OFF SOME BITS
+         C     R14,=A(7)           TEST IF JFCB POINTER
+         BE    OL0120              BR IF NOT
+         TM    0(R15),X'80'        TEST IF END OF EXIT LIST POINTERS
+         LA    R15,4(,R15)         COMPUTE ADDR OF THE NEXT ENTRY
+         BZ    OL0110              BR IF NOT END
+         B     OL0130              CONTINUE WITH NON-JFCB OPEN
+OL0120   RDJFCB MF=(E,OLPARM)      READ THE JFCB
+         LA    R0,8                INDICATE SERIOUS ERROR
+         LTR   R15,R15             TEST RC
+         BNZ   OL0300              BR IF ERROR
+         OPEN  MF=(E,OLPARM),TYPE=J USE A TYPE=J OPEN
+         B     OL0140              AND CONTINUE
+OL0130   OPEN  MF=(E,OLPARM)       ATTEMPT TO OPEN THE DCB
+OL0140   TM    DCBOFLGS-IHADCB(R3),DCBOFOPN TEST IF DCB IS OPEN
+         BO    OL0300              BR IF SO
+         LA    R0,8                SET PRELIMINARY RETURN CODE
+OL0200   CR    R0,R4               COMPARE PROPOSED WITH CURRENT MAX RC
+         BNH   OL0300              BR IF PROPOSED RC <= MAX
+         LR    R4,R0               MAKE PROPOSED RC = MAX RC
+OL0300   TM    0(R2),X'80'         TEST IF LAST DCB ENTRY
+         LA    R2,4(,R2)           COMPUTE ADDRESS OF THE NEXT DCB ENT
+         BZ    OL0100              BR IF DCB OK
+         LR    R15,R4              COPY RETURN CODE TO R15
+         L     R13,4(,R13)         LOAD ADDRESS OF CALLER'S SAVE AREA
+         RETURN (14,5),T,RC=(15)   RETURN TO CALLER
+         SPACE 1
+OLPARM   OPEN  (*-*),MF=L          OPEN PARM LIST
+OLWORK   DC    D'0'                DEVTYPE OUTPUT AREA
+         SPACE 1
+         DROP  R5
+         LTORG ,
+         EJECT
+         CNOP  0,8
+CLOSELST SAVE  (14,3),,*           SAVE REGISTERS
+         BALR  R3,0                STORE CURRENT ADDRESS IN R3
+         USING *,R3                ESTABLISH LOCAL BASE REGISTER
+         LA    R15,72(,R13)        LOAD ADDR OF THE NEXT SAVE AREA
+         ST    R13,4(,R15)         ADD NEW SAVE AREA TO CALLER'S
+         ST    R15,8(,R13)          SAVE AREA CHAIN
+         LR    R13,R15             ESTABLISH NEW SAVE AREA POINTER
+         LR    R2,R1               COPY OPEN PARM LIST ADDRESS TO R2
+         CLOSE MF=(E,(1))          CLOSE THE DATA SETS
+CL0100   L     R1,0(,R2)           LOAD DCB ADDRESS FROM PARM LIST
+         TM    DCBBUFCB-IHADCB+3(R1),1 TEST IF BUFFER POOL ATTACHED
+         BO    CL0200              BR IF NOT
+         FREEPOOL (1)              RELEASE THE BUFFER POOL
+CL0200   TM    0(R2),X'80'         TEST IF END OF THE PARM LIST
+         LA    R2,4(,R2)           COMPUTE ADDR OF NEXT ENTRY
+         BZ    CL0100              BR IF NOT END
+         L     R13,4(,R13)         LOAD ADDRESS OF CALLER'S SAVE AREA
+         RETURN (14,3),T
+         SPACE 1
+         DROP  R3
+         EJECT
+***********************************************************************
+*                                                                     *
+* Title -- OUTEDIT                                                    *
+*                                                                     *
+* Function / Operation -- The OUTEDIT routine provides the final      *
+*   page oriented output support for batch output.  The OUTEDIT       *
+*   routine inserts a page header into the output as required by      *
+*   the output stream.                                                *
+*                                                                     *
+* Calling sequence --                                                 *
+*                                                                     *
+*          LA    R1,outline                                           *
+*          l     R15,=A(OUTEDIT)                                      *
+*          CALL  (15)                                                 *
+*          .                                                          *
+*          .                                                          *
+*          .                                                          *
+* OUTLINE  DC    AL2(recordlen,0),CL(recordlen-4)' Output line with   *
+*                carriage control character'                          *
+*                                                                     *
+***********************************************************************
+         SPACE 1
+         CNOP  0,8
+OUTEDIT  SAVE  (14,3),,*           SAVE REGISTERS
+         BALR  R3,0                STORE CURRENT ADDRESS INTO R3
+         USING *,R3                ESTABLISH BASE REGISTER
+         LA    R15,72(,R13)        LOAD ADDRESS OF NEXT SAVE AREA
+         ST    R13,4(,R15)         ADD NEW SAVE AREA TO CALLER'S
+         ST    R15,8(,R13)          SAVE AREA CHAIN
+         LR    R13,R15             ESTABLISH A NEW SAVE AREA POINTER
+         LR    R2,R1               COPY MSG ADDRESS TO R2
+         ICM   R2,B'1000',4(R2)    LOAD CARRIAGE CONTROL CHARACTER
+         SR    R15,R15             SET R15 = 0
+         IC    R15,4(,R2)          LOAD CARRIAGE CONTROL CHARACTER
+         IC    R15,ASATAB(R15)     COMPUTE NUMBER OF LINES THIS LINE   ?
+                                    WILL PRINT
+         A     R15,LINECNT         ADD LINES WE'LL PRINT TO LINES      ?
+                                    CURRENTLY ON PAGE
+         C     R15,LINEMAX         COMPARE WITH MAX LINES/PAGE
+         BNH   OE0100              BR IF LINE FITS ON PAGE
+         MVC   PAGENUM,=X'402020202120' COPY EDIT MASK
+         ED    PAGENUM,PAGE#       CONVERT PAGE NUMBER TO DECIMAL
+         AP    PAGE#,=P'1'         ADD 1 TO CURRENT PAGE NUMBER
+         PUT   PRINT,PAGEHDR       WRITE THE PAGE HEADER
+         LA    R15,3               SET LINES TO 3
+         MVI   4(R2),C'0'          FORCE SPECIAL CARRIAGE CONTROL
+OE0100   ST    R15,LINECNT         UPDATE LINE COUNT
+         PUT   PRINT,(R2)          WRITE USER OUTPUT LINE
+         STCM  R2,B'1000',4(R2)    RESTORE CARRIAGE CONTROL
+         L     R13,4(,R13)         LOAD ADDR OF CALLER'S SAVE AREA
+         RETURN (14,3),T           RETURN TO CALLER
+         SPACE 5
+         DC    0D'0'
+ASATAB   DC    256AL1(255)
+         ORG   ASATAB+C' '
+         DC    AL1(1)
+         ORG   ASATAB+C'+'
+         DC    AL1(0)
+         ORG   ASATAB+C'-'
+         DC    AL1(3)
+         ORG   ASATAB+C'0'
+         DC    AL1(2)
+         ORG   ,
+LINECNT  DC    F'255'              CURRENT LINE COUNT
+LINEMAX  DC    F'60'               MAX LINES / PAGE
+         PUSH  PRINT
+         PRINT NOGEN
+PRINT    DCB   RECFM=VBA,LRECL=125,DSORG=PS,                           ?
+               MACRF=PM,DDNAME=SYSPRINT,EXLST=UT2XLST
+         POP   PRINT
+         SPACE 1
+PAGEHDR  DC    AL2(PAGEHDRL,0),CL(TOPL+1)'1'
+TOP      DC    C'Boeing Computer Services Load Module / CSECT XREF Util?
+               ity'
+TOPL     EQU   (120-L'TOP)/2
+TOPR     EQU   120-10-TOPL-L'TOP
+         DC    CL(TOPR)' ',C'PAGE'
+PAGENUM  DC    C' NNNNN'
+PAGEHDRL EQU   *-PAGEHDR
+         SPACE 1
+PAGE#    DC    P'00001'
+         DC    0D'0'
+         LTORG ,
+         EJECT
+         CNOP  0,8
+CNVTDATE SAVE  (14,12),,*          SAVE REGISTERS
+         BALR  R12,0               STORE CURRENT ADDRESS IN R12
+         USING *,R12               ESTABLISH LOCAL BASE REGISTER
+         LA    R15,72(,R13)        LOAD ADDR OF THE NEXT SAVE AREA
+         ST    R13,4(,R15)         ADD NEW SAVE AREA TO CALLER'S
+         ST    R15,8(,R13)          SAVE AREA CHAIN
+         LR    R13,R15             ESTABLISH NEW SAVE AREA POINTER
+         USING CDWORK,R13          USE SAVE AREA AS THE WORK AREA
+         USING CDOUT,R2            ESTABLISH LOOK OF OUTPUT AREA
+         LR    R2,R1               COPY OUTPUT AREA POINTER TO R2
+         LR    R1,R0               COPY R0 TO R1
+         LM    R0,R1,0(R1)         LOAD THE TIME AND DATE VALUES
+         MVC   0(L'CNMASK,R2),CNMASK  PRESET THE OUTPUT AREA
+*        TIME  DEC                 GET DATE AND TIME
+         STM   R0,R1,CDTMDT        SAVE DATE AND TIME
+         ED    CDOTIME,CDTMDT      CONVERT HH:MM IN TIME TO DECIMAL
+         LR    R3,R2               SAVE OUTPUT POINTER
+         TRT   CDTMDT+4(3),CNTTAB1 TEST IF FIRST PART OF DATE IS OK
+         BNZ   CNT0100             BR IF NOT
+         TRT   CDTMDT+4+3(1),CNTTAB2 TEST IF LAST BYTE OF DATE IS OK
+         BZ    CNT0200             BR IF SP
+CNT0100  LR    R2,R3               RESTORE R2
+         MVI   CDOYR,C' '          CLEAR THE YEAR OUTPUT AREA
+         MVC   CDOYR+1(7),CDOYR
+         B     CNT0400
+CNT0200  LR    R2,R3               RESTORE R2
+         ZAP   CDDWORK,CDTMDT+4    COPY JULIAN DATE TO DWORK
+         CVB   R15,CDDWORK         CONVERT JULIAN DATE TO BINARY
+         SR    R14,R14             SET R14 = 0
+         D     R14,=F'1000'        DIVIDE BINARY JULIAN DATE BY 1000
+         CVD   R15,CDDWORK         R15 CONTAINS THE YEAR - CONVERT
+         OI    CDDWORK+7,X'0F'      TO DECIMAL
+         UNPK  CDOYR,CDDWORK
+         LR    R3,R14              COPY DAY OF YEAR TO R3
+         SR    R14,R14             SET R14 = 0
+         D     R14,=F'4'           DIVIDE YEAR BY 4
+         LTR   R14,R14             TEST REMAINDER
+         BZ    CNT0300             BR IF LEAP YEAR
+         C     R3,=A(31+28)        COMPARE DAY OF YEAR WITH NUMBER OF  ?
+                                    DAYS IN JANUARY AND FEBRUARY
+         BNH   CNT0300             BR IF JANUARY OR FEBRUARY
+         LA    R3,1(,R3)           UPDATE DATE AS THOUGH THIS IS A     ?
+                                    LEAP YEAR
+CNT0300  SR    R15,R15             SET R15 = 0
+         IC    R15,CNTMNTH(R3)     LOAD MONTH FOR THIS DAY OF YEAR
+         CVD   R15,CDDWORK         CONVERT MONTH TO DECIMAL
+         OI    CDDWORK+7,X'0F'
+         UNPK  CDOMON,CDDWORK
+         SLL   R15,1               MULTIPLY MONTH BY 2
+         SH    R3,CNTDAY(R15)      SUBTRACT DAYS IN YEAR AT THE START  ?
+                                    OF THE MONTH FROM DAYS IN YEAR.    ?
+                                    THIS REVEALS DAY IN MONTH
+         CVD   R3,CDDWORK          CONVERT DAY IN MONTH TO DECIMAL
+         OI    CDDWORK+7,X'0F'
+         UNPK  CDODAY,CDDWORK
+CNT0400  L     R13,4(,R13)         LOAD ADDR OF CALLER'S SAVE AREA
+         RETURN (14,12),T          RETURN TO CALLER
+         SPACE 1
+         DROP  R2,R12,R13          KILL ADDRESSABILITY
+         SPACE 1
+CNTMNTH  EQU   *-1
+         DC    31AL1(1),29AL1(2),31AL1(3)
+         DC    30AL1(4),31AL1(5),30AL1(6)
+         DC    31AL1(7),31AL1(8),30AL1(9)
+         DC    31AL1(10),30AL1(11),31AL1(12)
+         SPACE 1
+         DC    0H'0'
+CNTDAY   EQU   *-2
+         DC    AL2(0)
+         DC    AL2(31)
+         DC    AL2(31+29)
+         DC    AL2(31+29+31)
+         DC    AL2(31+29+31+30)
+         DC    AL2(31+29+31+30+31)
+         DC    AL2(31+29+31+30+31+30)
+         DC    AL2(31+29+31+30+31+30+31)
+         DC    AL2(31+29+31+30+31+30+31+31)
+         DC    AL2(31+29+31+30+31+30+31+31+30)
+         DC    AL2(31+29+31+30+31+30+31+31+30+31)
+         DC    AL2(31+29+31+30+31+30+31+31+30+31+30)
+CNMASK   DC   0C'  /  /   HH:MM',C'  /  /   ',X'2120',C':',X'2020'
+         DC    0D'0'
+*                  0 1 2 3 4 5 6 7 8 9 A B C D E F
+CNTTAB1  DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 0
+         DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 1
+         DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 2
+         DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 3
+         DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 4
+         DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 5
+         DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 6
+         DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 7
+         DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 8
+         DC    AL1(0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4) 9
+         DC    16AL1(4)                             A
+         DC    16AL1(4)                             B
+         DC    16AL1(4)                             C
+         DC    16AL1(4)                             D
+         DC    16AL1(4)                             E
+         DC    16AL1(4)                             F
+         SPACE 1
+*                  0 1 2 3 4 5 6 7 8 9 A B C D E F
+CNTTAB2  DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 0
+         DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 1
+         DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 2
+         DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 3
+         DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 4
+         DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 5
+         DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 6
+         DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 7
+         DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 8
+         DC    AL1(4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0) 9
+         DC    16AL1(4)                             A
+         DC    16AL1(4)                             B
+         DC    16AL1(4)                             C
+         DC    16AL1(4)                             D
+         DC    16AL1(4)                             E
+         DC    16AL1(4)                             F
+         LTORG ,
+CDWORK   DSECT
+         DS    3A
+CDTMDT   DS    2A
+CDDWORK  DS    D
+CDOUT    DSECT
+CDOYR    DS    CL2,C'/'
+CDOMON   DS    CL2,C'/'
+CDODAY   DS    CL2
+CDOTIME  DS    C' HH:MM'
+         SPACE 1
+LMXREF   CSECT
+         EJECT
+         CNOP  0,8
+         SPACE 1
+         USING IHADCB,R11
+         USING *,R12
+         USING SETDWORK,R13
+         SPACE 1
+SETDCB   LR    R12,R15             COPY EP ADDRESS TO R12
+         LR    R11,R1              COPY DCB ADDRESS TO R11
+         LR    R10,R14             SAVE RETURN ADDRESS
+         LA    R0,SETDLEN          LOAD LENGTH OF MY WORK AREA
+         GETMAIN RU,LV=(0)         ALLOCATE MY WORK AREA
+         LR    R13,R1              COPY THE WORK AREA ADDRESS TO R13
+         LH    R3,DCBLRECL         LOAD THE LRECL
+         LH    R5,DCBBLKSI         LOAD THE BLKSIZE
+         LTR   R5,R5               TEST IF PROVIDED
+         BNZ   SETDC050            BR IF SO
+         L     R1,CVTPTR           LOAD THE CVT ADDRESS
+         L     R1,CVTTCBP-CVTMAP(,R1) LOAD ADDR OF THE TCB POINTERS
+         L     R1,4(,R1)           LOAD THE TCB ADDRESS
+         LH    R2,DCBTIOT          LOAD THE OFFSET OF THE TIOT ENTRY
+         N     R2,SETDC03          TURN OFF EXTRA BITS
+         A     R2,TCBTIO-TCB(,R1)  COMPUTE ADDR OF THE TIOT DD ENTRY   ?
+                                    FOR THE TCB
+         L     R7,TIOEFSRT-TIOENTRY-1(,R2) LOAD POSSIBLE UCB ADDR
+         N     R7,SETDC09          TURN OFF HIGH ORDER BYTE
+         DEVTYPE TIOEDDNM-TIOENTRY(,R2),DVAREA,DEVTAB GET DEVICE ATTRS
+         LTR   R15,R15             TEST RC FROM DEVTYPE
+         BNZ   SETDC999            GO EXIT IF ERROR
+         CLI   UCBTBYT3-UCBTYP+DVAREA,UCB3DACC TEST IF DASD
+         BE    SETDC010            BR IF SO
+         L     R5,SETDC06          LOAD DEFAULT TAPE BLOCK LEN
+         CLI   UCBTBYT3-UCBTYP+DVAREA,UCB3TAPE TEST IF DASD
+         BE    SETDC050            BR IF SO
+         LA    R5,256              SET DEFAULT NON-TAPE, NON-DASD
+         B     SETDC050            AND CONTINUE
+         SPACE 1
+* DO A BINARY SEARCH TO GET THE LARGEST POSSIBLE RECORD W/ 2 RECORDS
+* PER TRACK.  R4 = LOW, R5 = CURRENT TEST, R6 LARGEST TEST
+         SPACE 1
+SETDC010 L     R5,DVAMAXRC         LOAD MAXIMUM RECORD LENGTH
+         LR    R6,R5               USE R6 AS MINIMUM KNOWN 1 REC / TRK
+         SRA   R5,1                DIVIDE BLOCK LENGTH BY 2
+         SR    R4,R4               SET R4 = MINIMUM SIZE TRIED
+SETDC020 TRKCALC MF=(E,SETDCALC),  CALCULATE RECORDS / TRK             ?
+               UCB=(R7),            FOR THE BLOCK LENGTH IN R5         ?
+               R=1,                                                    ?
+               K=0,                                                    ?
+               DD=(R5),                                                ?
+               REGSAVE=YES,                                            ?
+               FUNCTN=TRKCAP
+         C     R0,SETDC04          TEST IF 2 RECORDS / TRK
+         BL    SETDC030            BR IF 1 RECORD / TRK
+         BH    SETDC040            BR IF 3 OR MORE RECORDS / TRK
+* TWO RECORDS / TRK
+         LR    R4,R5               UPDATE MIN TRIED
+         LR    R1,R6               COPY LAST KNOWN MIN 1 REC/TRK TO R1
+         SR    R1,R4               COMPUTE DIFFERENCE BETWEEN LAST     ?
+                                    BLKSIZE KNOWN TO BE 1 REC/TRK AND  ?
+                                     THE LAST TRIAL BLKSIZE
+         SRA   R1,1                DIVIDE DIFFERENCE BY 2
+         C     R1,SETDC05          COMPARE W/ 1
+         BNH   SETDC050            EXIT IF DIFFERENCE <= 1
+         LA    R5,0(R1,R4)         COMPUTE NEW TRIAL BLKSIZE
+         B     SETDC020            AND CONTINUE ON
+* ONE RECORD / TRK
+SETDC030 LR    R6,R5               SAVE R5 AS MINIMUM KNOWN 1 REC/TRK
+         SR    R5,R4               COMPUTE DIFFERENCE
+         SRA   R5,1                DIVIDE LAST VALUE BY 2
+         AR    R5,R4               COMPUTE NEXT VALUE
+         B     SETDC020            TRY AGAIN
+* THREE OR MORE RECORDS / TRK
+SETDC040 LR    R4,R5               UPDATE LOW VALUE
+         LR    R5,R6               COPY MAX WE'VE TRIED TO R5
+         SR    R5,R4               COMPUTE DIFFERENCE
+         SRA   R5,1                DIVIDE DIFFERECE BY 2
+         AR    R5,R4               COMPUTE NEW TRIAL VALUE
+         B     SETDC020            AND TRY AGAIN
+* WE'VE GOT THE BLKSIZE
+SETDC050 NI    DCBRECFM,255-DCBRECBR RESET BLOCKING ATTRIBUTE
+         IC    R0,DCBRECFM         LOAD RECFM
+         N     R0,SETDC01          TURN OFF EXTRANEOUS BITS
+         C     R0,SETDC02          TEST IF RECFM = F
+         BNE   SETDC070            BR IF NOT
+         CR    R3,R5               COMPARE LRECL IN R3 W/BLKSIZE IN R5
+         BNH   SETDC060            BR IF LRECL <= BLKSIZE
+         LR    R5,R3               COPY LRECL TO BLKSIZE
+SETDC060 SR    R4,R4               SET R4 = 0
+         DR    R4,R3               DIVIDE BLKSIZE BY LRECL
+         MR    R4,R3               COMPUTE VALID BLKSIZE
+         CR    R5,R3               TEST IF BLKSIZE = LRECL
+         BE    SETDC090            BR IF SO
+         OI    DCBRECFM,DCBRECBR   INDICATE DATA IS BLOCKED
+         B     SETDC090            AND GO CALCULATE BUFNO
+SETDC070 C     R0,SETDC07          TEST IF RECFM = V
+         BNE   SETDC090            BR IF NOT, USE BLKSIZE IN R5
+         LA    R0,4(,R3)           COMPUTE TRIAL BLOCKSIZE
+         CR    R0,R5               COMPARE TRIAL BLKSIZE W/ TRUE ONE
+         BNH   SETDC080            BR IF TRIAL BLKIZE <= TRUE BLKSIZE
+         LR    R5,R0               SET BLKSIZE = MINIMUM BLKSIZE
+SETDC080 CR    R0,R5               PERFORM THE COMPARE AGAIN
+         BE    SETDC090            BR IF BLKSIZE = LRECL
+         OI    DCBRECFM,DCBRECBR   INDICATE BLOCKING REQUIRED
+SETDC090 STH   R5,DCBBLKSI         SAVE THE CALCULATED BLKSIZE
+         CLI   DCBBUFNO,0          TEST IF BUFNO SET
+         BNE   SETDC999            BR IF NOT
+         TM    DCBBUFCB+3,1        TEST IF BUFFER POOL ALLOCATED
+         BZ    SETDC999            BR IF SO
+* THIS CODE CALCULATES AN OPTIMAL BUFNO
+         LA    R1,1                SET BUFNO = 1
+         TM    UCBTBYT3-UCBTYP+DVAREA,UCB3DACC+UCB3TAPE TEST IF TAPE   ?
+                                                         OR DASD
+         BZ    SETDC110            USE BUFNO = 1 IF NOT
+         L     R1,SETDC06          SET R1 = 32760
+         SR    R0,R0               SET R0 = 0
+         DR    R0,R5               COMPUTE BUFFERS IN THE POOL
+         C     R1,SETDC04          COMPARE TRIAL BUFNO W/ 2
+         BNL   SETDC100            BR IF PROPOSED BUFNO >= 2
+         L     R1,SETDC04          LOAD 2
+SETDC100 C     R1,SETDC08          COMPARE TRIAL BUFNO W/ MAX WE WANT
+         BNH   SETDC110            BR IF TRIAL BUFNO <= MAX
+         L     R1,SETDC08          LOAD MAX VALID BUFNO
+SETDC110 STC   R1,DCBBUFNO         SAVE BUFNO
+SETDC999 LA    R0,SETDLEN          LOAD LENGTH OF THE WORK AREA
+         FREEMAIN RU,LV=(0),A=(R13) RELEASE THE WORK AREA
+         BR    R10                 RETURN TO OPEN
+         SPACE 1
+         DROP  R11,R12,R13         KILL ADDRESSABILITY
+         SPACE 1
+SETDC01  DC    A(DCBRECL)          RECORD TYPE MASK
+SETDC02  DC    A(DCBRECF)          RECFM = F
+SETDC03  DC    A(X'FFFF')          MASK TO TURN OFF BITS AFTER A LH
+SETDC04  DC    A(2)
+SETDC05  DC    A(1)
+SETDC06  DC    A(32760)            DEFAULT TAPE BLOCK LEN
+SETDC07  DC    A(DCBRECV)          RECFM = V
+SETDC08  DC    A(100)              MAXIMUM BUFFERS IN CALCULATED POOL
+SETDC09  DC    A(X'FFFFFF')
+         SPACE 1
+SETDWORK DSECT                     SETDCB WORK AREA
+         DS    9D                  A SAVE AREA
+         IHADVA DSECT=NO           DEVTYPE OUTPUT AREA
+SETDCALC TRKCALC MF=L              TRKCALC PARM LIST
+         DS    0D
+SETDLEN  EQU   *-SETDWORK          WORK AREA LENGTH
+         SPACE 1
+         PUSH  PRINT
+         PRINT NOGEN
+TIOT     DSECT
+         IEFTIOT1 ,
+         IEFUCBOB ,
+         CVT   DSECT=YES
+         IKJTCB ,
+         IEZDEB ,
+         SPACE 1
+         POP   PRINT
+         EJECT
+         PUSH  PRINT
+         PRINT NOGEN
+         SETR  ,
+         DCBD  DSORG=(PO,BS,QS),DEVD=DA
+         POP   PRINT
+         EJECT
+* CESD RECORD IN A LOAD MODULE
+         SPACE 1
+CESDREC  DSECT
+CESDRID  DS    AL1                 CESD DATA = X'20'
+CESDRFLG DS    AL1                 FLAGS --
+CESDARMD EQU   X'80'                 CESDFLAG = AMODE/RMODE DATA
+         DS    AL2
+CESRDID  DS    AL2                 ESDID OF FIRST ENTRY
+CESDCNT  DS    AL2                 NUMBER OF BYTES OF CESD DATA
+CESDENTS EQU   *                   CESD DATA
+         SPACE 5
+* CESD ENTRY IN A CESD RECORD
+         SPACE 1
+CESDENT  DSECT
+CESDNAME DS    CL8                 NAME
+CESDTYPE DS    AL1                 TYPE
+ESDSD    EQU   X'00'                 SECTION DEFINITION
+ESDSDM   EQU   X'07'                 SIGNIFICANCE MASK
+ESDER    EQU   X'02'                 ER (EXTERNAL REFERENCE)
+ESDERM   EQU   X'07'                 SIGNIFICANCE MASK
+ESDERW   EQU   X'12'                 "WEAK" ER
+ESDERWM  EQU   X'1F'                 SIGNIFICANCE MASK
+ESDLR    EQU   X'03'                 LR (ENTRY)
+ESDLRM   EQU   X'07'                 SIGNIFICANCE MASK
+ESDPC    EQU   X'04'                 PRIVATE
+ESDPCM   EQU   X'17'                 SIGNIFANCE MASK
+ESDPCD   EQU   X'14'                 DELETE PRIVATE
+ESDCM    EQU   X'05'                 COMMON
+ESDCMM   EQU   X'07'                 SIGNIFICANCE MASK
+ESDPCDM  EQU   X'17'                 SIGNIFANCE MASK
+ESDPR    EQU   X'06'                 PSEUDO REGISTER
+ESDPRM   EQU   X'07'                 SIGNIFNACE MASK
+ESDNULL  EQU   X'07'                 NULL
+CESDADDR DS    AL3                 ADDRESS
+CESDFLAG DS    AL1                 FLAGS OR SEG ID
+ESDAMODE EQU   X'03'                 AMODE --
+*                                       0 OR 1 -- 24
+*                                            2 -- 31
+*                                            3 -- ANY
+ESDRMODE EQU   X'0C'                 RMODE --
+*                                            0 -- 24
+*                                    1 (X'04') -- 31
+CESDID   DS    AL3                 LENGTH (SD, PC, CM OR PR) OR ID (LR)
+         SPACE 5
+IDRREC   DSECT                     IDR RECORD
+IDRRID   DS    AL1                 IDR ID
+IDRID    EQU   X'80'               ID FOR AN IDR RECORD
+IDRSIZE  DS    AL1                 LENGTH OF DATA IN RECORD (INCLUDING ?
+                                    THIS BYTE)
+IDRSTYPE DS    AL1                 SUBTYPE --
+IDRLAST  EQU   B'10000000'           LAST IDR RECORD
+IDRMASK  EQU   B'00001111'           TYPE MASK
+IDRSPZAP EQU   B'00000001'           DATA FROM IMASPZAP
+IDRLINK  EQU   B'00000010'           LINKAGE EDITOR DATA
+IDRCOMP  EQU   B'00000100'           LANGUAGE TRANSLATOR DATA
+IDRUSER  EQU   B'00001000'           IDENTIFY DATA
+IDRDATA  EQU   *
+         SPACE 1
+IDRLDATA DSECT                     LINKAGE EDITOR DATA
+IDRLID   DS    CL10                LINKAGE EDITOR ID
+IDRLVER  DS    AL1                 LINKAGE EDITOR VERION
+IDRLLEV  DS    AL1                 LINKAGE EDITOR LEVEL
+IDRLDATE DS    PL3                 LINK EDIT DATE
+         SPACE 1
+* ONLY A VERBAL DESCRIPTION WILL BE PROVIDED FOR SUPERZAP DATA
+* GROUP 1 -- COUNT
+*            +0  -- AL1(N)  NUMBER OF ENTRIES (NOT RELIABLE, BUT MORE
+*                           THAN 19, IF MORE THAN ONE PHYSICAL RECORD.
+*                           APPEARS TO BE RELIABLE FOR LAST PHYSICAL
+*                           RECORD)
+* GROUP 2 -- ENTRIES
+*            +0  -- AL2     ESDID
+*            +2  -- PL3     DATE
+*            +5  -- CL8     ZAP ID DATA
+*
+*   SUPERZAP RECORDS ARE NOT SPANNED LIKE THE OTHER IDR RECORDS
+         SPACE 1
+* ONLY A VERBAL DESCRIPTION WILL BE PROVIDED FOR TRANSLATOR DATA
+* THESE ENTRIES SPACE AS MANY RECORDS AS ARE REQUIRED, AND SPANS
+* RECORDS WHEN THE RECORD IS COMPLETELY FULL
+         SPACE 1
+* GROUP 1 -- ESDID DATA -- ESDID DATA CONTAINS A VARIABLE NUMBER OF
+*                          2 BYTE ESDID DATA ELEMENTS.  THE LAST ONE IS
+*                          INDICATED BY X'8XXX'
+* GROUP 2 -- TRANSLATOR NAMES COUNT
+*            +0  -- AL1(N)  NUMBER - 1 OF TRANSLATOR NAMES
+* GROUP 3 -- TRANSLATOR NAMES
+*            +0  -- CL10    TRANSLATOR NAME
+*            +10 -- AL1     TRANSLATER VERSION
+*            +11 -- AL1     TRANSLATOR LEVEL
+*            +12 -- PL3     TRANSLATION DATE
+         SPACE 5
+* IDENTIFY DATA -- THIS DATA SPANS FULL RECORDS
+         SPACE 1
+IDRIDATA DSECT
+IDRIESD  DS    AL2                 ESDID
+IDRIDATE DS    PL3                 DATE
+IDRICNT  DS    AL1                 LENGTH OF TEXT
+IDRITXT  DS   0C                   TEXT
+         SPACE 5
+* INTERNAL ESD ENTRY.  THIS DATA IS AN EXPANDED FORM OF A CESD
+* ENTRY
+         SPACE 1
+ESDENT   DSECT
+ESDNAME  DS    CL8' '              LOGICAL NAME, IF APPROPRIATE
+ESDADDR1 DS    A                   FIRST ADDRESS OR LENGTH
+ESDADDR2 DS    A                   SECOND ADDRESS OR LENGTH
+ESDID    DS    AL2                 ESDID OF THE ENTRY
+ESDTYPE  DS    AL1                 ENTRY TYPE
+ESDFLAGS DS    AL1                 FLAGS OR ALIGNMENT --
+         DS    0D'0'
+ESDENTL  EQU   *-ESDENT
+         SPACE 5
+XREFREC  DSECT
+XREFNAME DS    CL8                 CSECT NAME
+XREFSIZE DS    AL3                 CSECT SIZE
+XREFCDT1 DS    CL8                 FIRST COMPILE DATE
+XREFCID1 DS    CL10                FIRST COMPILER ID
+XREFCLV1 DS    2AL1                FIRST COMPILER VERSION/LEVEL
+XREFCDT2 DS    CL8                 SECOND COMPILE DATE
+XREFCID2 DS    CL10                SECOND COMPILER ID
+XREFCLV2 DS    2AL1                SECOND COMPILER VERSION/LEVEL
+XREFCDAT EQU   XREFCDT1,*-XREFCDT1 DEFINE THE CLEAR AREA
+XREFID   DS    CL8                 LAST IDENTIFY DATE FOR CSECT
+XREFIT   DS    CL40                LAST IDENTIFY DATA FOR CSECT
+XREFZD   DS    CL8                 LAST ZAP DATE FOR CSECT
+XREFZT   DS    CL8                 LAST ZAP TEXT FOR CSECT
+XREFLMOD DS    CL8                 LOAD MODULE WHERE CSECT IS LOCATED
+XREFVOL  DS    CL6                 VOLUME WHERE DATA SET IS LOCATED
+XREFDSN  DS    CL44                DATA SET NAME
+XREFLDAT DS    CL8                 DATE LOAD MODULE WAS LINKED
+XREFRECL EQU   *-XREFREC           RECORD LENGTH
+         SPACE 1
+         END   LMXREF
