@@ -1,0 +1,182 @@
+The LMXREF utilities analyze load libraries and extract the IDR
+data in the load modules and reports this data.  LMXREF is batch,
+not TSO.
+
+At least in concept, the programs can analyze several libraries:
+for example, a staging library for production programs and the
+production program library can be analyzed to verify the programs
+in the staging library reached the production library.
+
+The first program, LMXREF, analyzes a load library and creates a
+data set that is then processed by the LMXREFR utility.  Several
+LMXREF data sets can be processed by LMXREFR in a single run.
+
+            U S I N G   T H E   L M X R E F R   R E P O R T S
+
+The first LMXREFR report shows each named CSECT and the load modules
+where the CSECT is located.
+
+$DYNPGM  0002E6  00/12/21 569623400
+                 SMYERS.LOAD                                  CBT004
+                 $DYNPGM
+
+LMXREFR shows the CSECT name, it size, the date the module was
+compiled, and the IBM product code for the compiler.  CSECTs
+in different load modules with the same name and assembly data
+are considered to be the same module.
+
+FORMATR  000ECE  03/01/03 569623400
+                 SMYERS.LOAD                                  CBT004
+                 BR       BRESET   BROLD    BX       BXOLD    CNVTM
+                 DSKTSK40 DSKTSK41 DSKTSK42 DSKTSK43 DSKTSK45 DSKTSK46
+                 FLIBSCAN FORMATR  GAC      LISTCDI  LMATTR   MFMT
+
+In 2003 an error in this CSECT was detected.  The LMXREF report
+was used to link a corrected version of FORMATR into all the load
+modules where it was present.
+
+MINIFMT  000A90  10/06/28 569623400
+                 SMYERS.LOAD                                  CBT004
+                 ASTATS   CNVTDATE COPYMAN  DASDSUM  DDOZEN   DSUSE
+                 MINIFMTO MINISKED NEWUSER  SMF34SUM SPY      TODAYO
+MINIFMT  000B50  15/01/04 569623400
+                 SMYERS.LOAD                                  CBT004
+                 ALTDIR   CATMATCH CATSCAN  CHKADMIN CHKBANN  DSKLST50
+                 SCAN118  SMFDATES TODAY    TSOABEND
+MINIFMT  000B68  16/09/25 569623400
+                 SMYERS.LOAD                                  CBT004
+                 DISKCOMP DISKLIST DSREF    FPART    ICOPY13  KEEPITUP
+
+Here, several versions of MINIFMT are present.  Each version
+added something, but there were no corrected errors.
+
+Of course, it is also possible to leap to false conclusions.
+
+OUTDFLT  000008  00/03/27 569623400
+                 SMYERS.LOAD                                  CBT004
+                 PGMMON
+OUTDFLT  000008  00/10/30 569623400
+                 SMYERS.LOAD                                  CBT004
+                 FLIBSCAN
+OUTDFLT  000008  00/12/06 569623400
+                 SMYERS.LOAD                                  CBT004
+                 SYSINFO
+
+It turns out OUTDFLT supplies default information for another
+module.  It is typically assembled with the other program and
+replaces the OUTDFLT CSECT in the subroutine.
+
+The next report attempts to note modules that exist in multiple
+versions.
+
+The following modules appear to be different -- ADATAPCL,ADATAPCL,
+COMMON,CONCAT,DATAAREA,DEFAULTS,DEFAULTS,DISKLIST,DISKTASK,DISKTASK,
+DISKTASK,DKLDATA,DSNPCL,DSNPCL,DSNPCL,DSNPCL,DSSTAT,EXECSUM,EXPAND,
+
+The next report shows the CSECTs analyzed by LMXREF in each load
+module.
+
+ANALTSS  SMYERS.LOAD                                  CBT004
+         ANALTSS,MINIFMTR,OUTDFLT,OUTEDIT,QSORTS
+
+The OUTDFLT module discussed earlier is part of OUTEDIT.  The
+OUTDFLT assembled with (in this program) ANALTSS replaces the
+OUTDFLT assembled with OUTEDIT.
+
+The next report just lists the load module data sets processed by
+LMXREF -
+
+The following data sets were analyzed --
+SMYERS.LOAD                                  CBT004
+
+And, finally, the last report just reports the compiler proceessors.
+
+ COMPILER  VERSION     DATE RANGE
+PL/X-370     1.004 00/01/10 99/04/01    85
+PL/X-390     2.001 04/01/13 04/01/13     1
+566896201    2.001 87/03/19 95/04/21    14
+569623400    1.001 95/04/05 96/08/23    17
+569623400    1.002 00/03/27 99/06/03   160
+569623400    1.003 00/01/10 01/03/26    30
+569623400    1.004 01/06/01 05/04/10   229
+569623400    1.005 05/06/03 19/11/24   370
+569623400    1.006 16/03/15 21/07/06    58
+LMX999I LMXREFR REPORT COMPLETE,  2,241K BYTES UNUSED STORAGE
+
+In order to fully understand this report you must know IBM
+product codes.  566896201 is the OS/VS System Assembler, more
+commonly called the IFOX Assembler.  569623400 is the High Level
+Assembler.
+
+Y2K - For the most part LMXREF is Y2K compatible.  Unfortunately
+the input in IDR data in load modules is not Y2K compliant, and
+this limits the ability of LMXREF and LMXREFR to be fully Y2K
+compliant; you will notice it screwed up date ranges for a couple
+of compilers.
+
+             C O N T E N T S   O F   T H I S   D A T A S E T
+
+Menber
+$DOC     - This member
+CLIST    - A CLIST to run LMXREF and LMXREFR.  Run it as
+           clist-mame load-module-data set
+           The data set name for the SYSPRINT data set is
+           derived from the name of the load module data set you
+           analyzed.
+LMXREF   - The LMXREF program.  Should you choose to assemble it
+           you will receive several ASMA303W warnings.  LMXREF was
+           finished before the ASMA303W warning was added to the
+           High LOevel Assembler; it wasn't worth fixing.
+LMXREFR  - The report program.
+OBJECT   - Object "decks" from assembling LMXREF, LMXREFR and
+           QSORTS with Binder control statements to prepare the
+           LMXREF and LMXREFR load modules.
+QSORTS   - A sorting module used by LMXREFR.
+
+         P R E P A R I N G   L M X R E F   A N D   L M X R E F R
+
+The batch JCL or TSO commands that follows prepares a
+userid.LMXREF.LOAD data set containing the LMXREF and LMXREFR
+programs.  Adjust the JCL or TSO commands to store the modules in
+a library with other programs.  hlq.LMXREF.CBT.PDS represents
+this data set; substitute the data set name you chose when you
+received the data set from the CBT  distribution.
+
+Batch -
+
+//PREP    EXEC PGM=IEFBR14
+//SYSLMOD  DD  DISP=(MOD,DELETE),UNIT=SYSALLDA,SPACE=(TRK,0),
+//             DSN=&SYSUID..LMXREF.LOAD
+//LINK    EXEC PGM=IEWL,PARM='MAP,LIST'
+//SYSPRINT DD  SYSOUT=*
+//SYSLMOD  DD  DISP=(,CATLG),UNIT=SYSDA,SPACE=(TRK,(1,1,1)),
+//             DSN=*.PREP.SYSLMOD
+//SYSLIN   DD  DISP=SHR,DSN=hlq.LMXREF.CBT.PDS(OBJECT)
+
+TSO -
+
+DELETE LMXREF.LOAD
+LINK 'hlq.LMXREF.CBT.PDS(OBJECT)' LOAD(LMXREF)
+
+In order to run the CLIST member in this data set, you must
+make the library where you installed LMXREF and LMXREFR available
+to your TSO session using the TSOLIB command or some
+equivalent facility.
+
+TSOLIB ACT DA(LMXREF.LOAD)
+
+It's easier to run the CLIST if you add this data set to any
+SYSPROC data sets defined to your TSO session.  Then
+
+CLIST 'data set to analyze'
+
+Batch -
+
+//JOBLIB   DD  DISP=(SHR,PASS),DSN=&SYSUID..LMXREF.LOAD
+//A       EXEC PGM=LMXREF
+//SYSPRINT DD  SYSOUT=*
+//SYSUT1   DD  DISP=SHR,DSN=library to analyze
+//SYSUT2   DD  DISP=(,PASS),UNIT=SYSDA,SPACE=(CYL,(1,1))
+//B       EXEC PGM=LMXREFR
+//SYSPRINT DD  SYSOUT=*
+//SYSUT1   DD  DISP=(OLD,PASS),DSN=*.A.SYSUT2
